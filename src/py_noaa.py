@@ -62,11 +62,21 @@ class NoaaApi(object):
             data_ = self._parse_response(response)
             df = df.append(data_)
             if self._iteration_complete(data_):
-                df.to_csv('data/NOAA_sample_data.csv')
+                df.to_csv('data/NOAA_complete_data.csv')
                 self.data = df
                 break
             else:
+                data_.to_csv('data/NOAA_temp_data.csv')
+                # self._write_to_temp_file(data_)
                 continue
+
+    def _write_to_temp_file(self, data, filename='temp_data', extension='txt'):
+        assert isinstance(data, pd.DataFrame), 'expecting Pandas DataFrame'
+        filepath = "data/NOAA_{}.{}".format(filename, extension)
+        with open(filepath, 'a') as data_file:
+            for index, row in data.iterrows():
+                data_file.write(row.to_string())
+        print("{n} records written to temp file".format(n=len(data)))
 
     def _iteration_complete(self, data_):
         n_records = len(data_)
