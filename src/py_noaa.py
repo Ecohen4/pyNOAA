@@ -20,7 +20,7 @@ class NoaaApi(object):
         self.headers = {'token': api_key}
         self.endpoint = "https://www.ncdc.noaa.gov/cdo-web/api/v2/data?"
         self.payload = self._default_query_params()
-        self.data = None
+        # self.data = None
 
     def _update_payload(self, query_params):
         self.payload.update(**query_params)
@@ -39,44 +39,89 @@ class NoaaApi(object):
         if query_params is not None:
             self._update_payload(query_params)
         response = requests.get(self.endpoint, headers=self.headers, params=self.payload)
-        print('request: {}'.format(response.url))
-        print('status code: {}'.format(response.status_code))
         return response
 
+    def _insert_documents_into_db(documents):
+        collection = init_mongo_client()
+        print('{} documents received'.format(len(documents)))
+        print('inserting documents into mongodb...')
+        document_count = 0
+        for doc in documents:
+            try:
+                collection.insert(doc)
+                print(doc)
+                document_count += 1
+            except pymongo.errors.DuplicateKeyError:
+                print("duplicate record found... skipping...")
+                continue
+        print('done. {} documents successfully inserted to MongoDB'.format(document_count))
+
+    def init_mongo_client():
+        client = pymongo.MongoClient()  # Initiate Mongo client
+        db = client.NOAA            # Access database
+        coll = db.data          # Access collection
+        return db.data      # return collection pointer
+
+    # def _parse_response(self, response):
+    #     try:
+    #         list_of_dicts = response.json()['results']
+    #         print('records returned: {n}'.format(n=len(list_of_dicts)))
+    #         df = pd.DataFrame(list_of_dicts).set_index('station')
+    #     except (json.JSONDecodeError, KeyError) as e:
+    #         print('ERROR: {}'.format(e))
+    #         df = pd.DataFrame()
+    #     print(df)
+    #     return df
+
+    def _valid_response(self, response):
+        if response.status_code == 200:
+            if 'results' in response.json().keys():
+                print('SUCCESS: valid response')
+                return True
+            elif self._is_empty(json):
+                print('WARNING: empty response')
+                return False
+            else:
+                print('WARNING: unexpected response')
+                return False
+        else:
+            print ('WARNING: request failed with status code {}'.format(response.status_code))
+
     def _parse_response(self, response):
-        try:
-            list_of_dicts = response.json()['results']
-            print('records returned: {n}'.format(n=len(list_of_dicts)))
-            df = pd.DataFrame(list_of_dicts).set_index('station')
-        except (json.JSONDecodeError, KeyError) as e:
-            print('ERROR: {}'.format(e))
-            df = pd.DataFrame()
-        print(df)
+        return response.json()['results']
+
+    def _convert_to_df(self, list_of_dicts):
+        df = pd.DataFrame(list_of_dicts).set_index('station')
         return df
 
+    def _is_empty(any_structure):
+        if any_structure:
+            return False
+        else:
+            print('WARNING: Data structure is empty.')
+            return True
+
     def _iterate_over_pages(self, query_params):
-        df = pd.DataFrame()
         for i in range(100):
             self.payload.update({'offset': 1000*i})
             response = self._make_request(query_params)
-            data_ = self._parse_response(response)
-            df = df.append(data_)
-            if self._iteration_complete(data_):
-                df.to_csv('data/NOAA_complete_data.csv')
-                self.data = df
-                break
+            if self._valid_response(response):
+                data_ = self._parse_response(response)
+                self._insert_documents_into_db(data_)
+                if self._iteration_complete(data_):
+                    break
+                else:
+                    continue
             else:
-                data_.to_csv('data/NOAA_temp_data.csv')
-                # self._write_to_temp_file(data_)
                 continue
 
-    def _write_to_temp_file(self, data, filename='temp_data', extension='txt'):
-        assert isinstance(data, pd.DataFrame), 'expecting Pandas DataFrame'
-        filepath = "data/NOAA_{}.{}".format(filename, extension)
-        with open(filepath, 'a') as data_file:
-            for index, row in data.iterrows():
-                data_file.write(row.to_string())
-        print("{n} records written to temp file".format(n=len(data)))
+    # def _write_to_temp_file(self, data, filename='temp_data', extension='txt'):
+    #     assert isinstance(data, pd.DataFrame), 'expecting Pandas DataFrame'
+    #     filepath = "data/NOAA_{}.{}".format(filename, extension)
+    #     with open(filepath, 'a') as data_file:
+    #         for index, row in data.iterrows():
+    #             data_file.write(row.to_string())
+    #     print("{n} records written to temp file".format(n=len(data)))
 
     def _iteration_complete(self, data_):
         n_records = len(data_)
@@ -91,7 +136,9 @@ class NoaaApi(object):
 
     def _iterate_over_years(self, query_params):
         year_range = pd.date_range(
-        start=self.payload['startdate'], end=self.payload['enddate'], freq='12M'
+        start=self.payload['startdate'],
+        end=self.payload['enddate'],
+        freq='12M'
         )
         for i, year in enumerate(year_range[:-1]):
             self.payload.update(
