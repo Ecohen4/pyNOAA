@@ -1,15 +1,17 @@
 import os
-import requests
-from pprint import pprint
 import json
+import pymongo
+import requests
 import pandas as pd
+from pprint import pprint
+
+# import pymongo_helpers
 
 class NoaaApi(object):
     '''
     Helper methods for working with NOAA's data API.
     See https://www.ncdc.noaa.gov/cdo-web/webservices/v2 for API documentation.
     '''
-
     def __init__(self, api_key):
         '''
         First, request an API token: https://www.ncdc.noaa.gov/cdo-web/token
@@ -20,7 +22,7 @@ class NoaaApi(object):
         self.headers = {'token': api_key}
         self.endpoint = "https://www.ncdc.noaa.gov/cdo-web/api/v2/data?"
         self.payload = self._default_query_params()
-        # self.data = None
+        # self._init_mongo_client()
 
     def _update_payload(self, query_params):
         self.payload.update(**query_params)
@@ -40,27 +42,6 @@ class NoaaApi(object):
             self._update_payload(query_params)
         response = requests.get(self.endpoint, headers=self.headers, params=self.payload)
         return response
-
-    def _insert_documents_into_db(documents):
-        collection = init_mongo_client()
-        print('{} documents received'.format(len(documents)))
-        print('inserting documents into mongodb...')
-        document_count = 0
-        for doc in documents:
-            try:
-                collection.insert(doc)
-                print(doc)
-                document_count += 1
-            except pymongo.errors.DuplicateKeyError:
-                print("duplicate record found... skipping...")
-                continue
-        print('done. {} documents successfully inserted to MongoDB'.format(document_count))
-
-    def init_mongo_client():
-        client = pymongo.MongoClient()  # Initiate Mongo client
-        db = client.NOAA            # Access database
-        coll = db.data          # Access collection
-        return db.data      # return collection pointer
 
     # def _parse_response(self, response):
     #     try:
@@ -101,6 +82,18 @@ class NoaaApi(object):
             print('WARNING: Data structure is empty.')
             return True
 
+    def _iteration_complete(self, data_):
+        df = self._convert_to_df(data_)
+        n_records = len(df)
+        most_recent_date = df.sort_values('date').iloc[-1].date.split('T')[0]
+        print('number of records: {n}'.format(n=n_records))
+        print('most recent record: {date}'.format(date=most_recent_date))
+        if (n_records < 1000) or (most_recent_date == self.payload['enddate']):
+            print('No more records to retrieve')
+            return True
+        else:
+            return False
+
     def _iterate_over_pages(self, query_params):
         for i in range(100):
             self.payload.update({'offset': 1000*i})
@@ -123,17 +116,6 @@ class NoaaApi(object):
     #             data_file.write(row.to_string())
     #     print("{n} records written to temp file".format(n=len(data)))
 
-    def _iteration_complete(self, data_):
-        n_records = len(data_)
-        most_recent_date = data_.sort_values('date').iloc[-1].date.split('T')[0]
-        print('number of records: {n}'.format(n=n_records))
-        print('most recent record: {date}'.format(date=most_recent_date))
-        if (n_records < 1000) or (most_recent_date == self.payload['enddate']):
-            print('No more records to retrieve')
-            return True
-        else:
-            return False
-
     def _iterate_over_years(self, query_params):
         year_range = pd.date_range(
         start=self.payload['startdate'],
@@ -154,6 +136,26 @@ class NoaaApi(object):
 
     def _valid_date_range(self, payload):
         pass
+
+    def _insert_documents_into_db(self, documents):
+        collection = self._init_mongo_client()
+        print('{} documents received'.format(len(documents)))
+        print('inserting documents into mongodb...')
+        document_count = 0
+        for doc in documents:
+            try:
+                collection.insert(doc)
+                document_count += 1
+            except pymongo.errors.DuplicateKeyError:
+                print("duplicate record found... skipping...")
+                continue
+        print('done. {} documents successfully inserted to MongoDB'.format(document_count))
+
+    def _init_mongo_client(self):
+        client = pymongo.MongoClient()  # Initiate Mongo client
+        db = client.NOAA            # Access database
+        coll = db.data          # Access collection
+        return db.data      # return collection pointer
 
 
 
