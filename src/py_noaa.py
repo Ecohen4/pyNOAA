@@ -146,11 +146,11 @@ class NoaaApi(object):
                 continue
         print('done. {} documents successfully inserted to MongoDB'.format(document_count))
 
-    def _init_mongo_client(self):
-        client = pymongo.MongoClient()  # Initiate Mongo client
-        db = client.NOAA            # Access database
-        coll = db.data          # Access collection
-        return db.data      # return collection pointer
+    def _init_mongo_client(self, collection_name='GSOM'):
+        client = pymongo.MongoClient()   # Initiate Mongo client
+        db = client.NOAA                 # Access database
+        collection = db[collection_name] # Access collection
+        return collection                # return collection pointer
 
 
 
