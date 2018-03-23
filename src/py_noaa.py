@@ -198,9 +198,10 @@ if __name__=="__main__":
     payload = {
     'datasetid': 'GHCND',
     'locationid': 'FIPS:08117',
-    'startdate': pd.to_datetime('2015-12-31').date(),
-    'enddate': pd.to_datetime('2018-02-01').date(),
-    'units': 'metric'
+    'startdate': pd.to_datetime('2012-12-31').date(),
+    'enddate': pd.to_datetime('2017-12-31').date(),
+    'units': 'metric',
+    'limit': 1000
     }
     NOAA = NoaaApi(api_key, payload)
-    NOAA.get_data()
+    NOAA.get_data(payload)
